@@ -1,3 +1,5 @@
+data中的数据没有安装，python setup.py即可全部获得，仅仅保留了训练完成后的数据（save文件夹中）
+
 ## Setup
 
 1. Make sure you have [Miniconda](https://docs.conda.io/en/latest/miniconda.html) installed
