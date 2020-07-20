@@ -6,6 +6,7 @@ Author:
 
 import argparse
 
+# argparse用法： https://www.jianshu.com/p/a41fbd4919f8
 
 def get_setup_args():
     """Get arguments needed in setup.py."""
@@ -13,9 +14,9 @@ def get_setup_args():
 
     add_common_args(parser)
 
-    parser.add_argument('--train_url',
-                        type=str,
-                        default='https://github.com/chrischute/squad/data/train-v2.0.json')
+    parser.add_argument('--train_url',    # - 一个命名或者一个选项字符串的列表，例如 foo 或 -f, --foo。
+                        type=str,    # type - 命令行参数应当被转换成的类型。
+                        default='https://github.com/chrischute/squad/data/train-v2.0.json')    # default - 当参数未在命令行中出现时使用的值。
     parser.add_argument('--dev_url',
                         type=str,
                         default='https://github.com/chrischute/squad/data/dev-v2.0.json')

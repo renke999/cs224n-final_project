@@ -13,20 +13,20 @@ Author:
 
 import numpy as np
 import os
-import spacy
-import ujson as json
+import spacy    # 自然语言处理库
+import ujson as json    # 比json更快的库
 import urllib.request
 
-from args import get_setup_args
-from codecs import open
+from args import get_setup_args    # 命令行操作
+from codecs import open    # 编码转换  https://www.cnblogs.com/666666pingzi/p/11462722.html
 from collections import Counter
-from subprocess import run
-from tqdm import tqdm
-from zipfile import ZipFile
+from subprocess import run    # 子进程模块
+from tqdm import tqdm    # 进度条配置
+from zipfile import ZipFile    # 解压zip文件
 
 
 def download_url(url, output_path, show_progress=True):
-    class DownloadProgressBar(tqdm):
+    class DownloadProgressBar(tqdm):    # tqdm用于配置进度条
         def update_to(self, b=1, bsize=1, tsize=None):
             if tsize is not None:
                 self.total = tsize
@@ -41,7 +41,7 @@ def download_url(url, output_path, show_progress=True):
                                        reporthook=t.update_to)
     else:
         # Simple download with no progress bar
-        urllib.request.urlretrieve(url, output_path)
+        urllib.request.urlretrieve(url, output_path)    # 将远程数据下载到本地，无进度条
 
 
 def url_to_data_path(url):
@@ -54,7 +54,7 @@ def download(args):
         ('GloVe word vectors', args.glove_url),
     ]
 
-    for name, url in downloads:
+    for name, url in downloads:    # 下载文件并检测是否已下载
         output_path = url_to_data_path(url)
         if not os.path.exists(output_path):
             print(f'Downloading {name}...')
@@ -64,14 +64,15 @@ def download(args):
             extracted_path = output_path.replace('.zip', '')
             if not os.path.exists(extracted_path):
                 print(f'Unzipping {name}...')
-                with ZipFile(output_path, 'r') as zip_fh:
+                with ZipFile(output_path, 'r') as zip_fh:    # 解压文件
                     zip_fh.extractall(extracted_path)
 
     print('Downloading spacy language model...')
-    run(['python', '-m', 'spacy', 'download', 'en'])
+    run(['python', '-m', 'spacy', 'download', 'en'])    # 创建子进程，传递相关参数下载相应内容。 python -m: https://www.cnblogs.com/maoguy/p/6670988.html
+
 
 def word_tokenize(sent):
-    doc = nlp(sent)
+    doc = nlp(sent)    # nlp = spacy.blank("en")
     return [token.text for token in doc]
 
 
@@ -79,37 +80,35 @@ def convert_idx(text, tokens):
     current = 0
     spans = []
     for token in tokens:
-        current = text.find(token, current)
+        current = text.find(token, current)    # 找到对应单词的索引，失败返回-1
         if current < 0:
             print(f"Token {token} cannot be found")
             raise Exception()
-        spans.append((current, current + len(token)))
+        spans.append((current, current + len(token)))    # 每一个元组是起始位置与结束位置，共有单词总数那么多个元组
         current += len(token)
     return spans
 
 
 def process_file(filename, data_type, word_counter, char_counter):
     print(f"Pre-processing {data_type} examples...")
-    examples = []
+    examples = []    # 所有训练数据
     eval_examples = {}
-    total = 0
+    total = 0    # 问题的总数
     with open(filename, "r") as fh:
-        source = json.load(fh)
-        for article in tqdm(source["data"]):
+        source = json.load(fh)    # 处理json数据文件
+        for article in tqdm(source["data"]):    # 显示进度条
             for para in article["paragraphs"]:
-                context = para["context"].replace(
-                    "''", '" ').replace("``", '" ')
-                context_tokens = word_tokenize(context)
+                context = para["context"].replace("''", '" ').replace("``", '" ')    # 将原来的para中''和``转换为"
+                context_tokens = word_tokenize(context)    # 分词
                 context_chars = [list(token) for token in context_tokens]
                 spans = convert_idx(context, context_tokens)
                 for token in context_tokens:
-                    word_counter[token] += len(para["qas"])
+                    word_counter[token] += len(para["qas"])    # 问题的数量，统计context中一个单词对应的问题数量，因为一个context对应多个问题，所以词频加多次
                     for char in token:
                         char_counter[char] += len(para["qas"])
                 for qa in para["qas"]:
                     total += 1
-                    ques = qa["question"].replace(
-                        "''", '" ').replace("``", '" ')
+                    ques = qa["question"].replace("''", '" ').replace("``", '" ')
                     ques_tokens = word_tokenize(ques)
                     ques_chars = [list(token) for token in ques_tokens]
                     for token in ques_tokens:
@@ -121,28 +120,29 @@ def process_file(filename, data_type, word_counter, char_counter):
                     for answer in qa["answers"]:
                         answer_text = answer["text"]
                         answer_start = answer['answer_start']
-                        answer_end = answer_start + len(answer_text)
+                        answer_end = answer_start + len(answer_text)     # 得到答案在文中的起始位置和结束位置
                         answer_texts.append(answer_text)
                         answer_span = []
-                        for idx, span in enumerate(spans):
+                        for idx, span in enumerate(spans):    # 计算答案在context中的索引
                             if not (answer_end <= span[0] or answer_start >= span[1]):
                                 answer_span.append(idx)
                         y1, y2 = answer_span[0], answer_span[-1]
                         y1s.append(y1)
                         y2s.append(y2)
+                    # 一个example包括了一个context和其所对应的一个question及所有answer
                     example = {"context_tokens": context_tokens,
                                "context_chars": context_chars,
                                "ques_tokens": ques_tokens,
-                               "ques_chars": ques_chars,
-                               "y1s": y1s,
-                               "y2s": y2s,
-                               "id": total}
+                               "ques_chars": ques_chars,    # tokens和chars用于后续word和char level模型的使用
+                               "y1s": y1s,    # 答案在文中的起始index
+                               "y2s": y2s,    # 答案在文中的结束index
+                               "id": total}    # id：第几个question
                     examples.append(example)
-                    eval_examples[str(total)] = {"context": context,
+                    eval_examples[str(total)] = {"context": context,    # 每个example对应的原context，原question，原answers等内容
                                                  "question": ques,
                                                  "spans": spans,
                                                  "answers": answer_texts,
-                                                 "uuid": qa["id"]}
+                                                 "uuid": qa["id"]}    # 训练数据中每个问题独特的id，例如 "id": "68cf05f67fd29c6f129fe2fb9",
         print(f"{len(examples)} questions in total")
     return examples, eval_examples
 
@@ -150,15 +150,15 @@ def process_file(filename, data_type, word_counter, char_counter):
 def get_embedding(counter, data_type, limit=-1, emb_file=None, vec_size=None, num_vectors=None):
     print(f"Pre-processing {data_type} vectors...")
     embedding_dict = {}
-    filtered_elements = [k for k, v in counter.items() if v > limit]
+    filtered_elements = [k for k, v in counter.items() if v > limit]    # 只保留词频大于limit的单词，其他为<UNK>？
     if emb_file is not None:
         assert vec_size is not None
-        with open(emb_file, "r", encoding="utf-8") as fh:
-            for line in tqdm(fh, total=num_vectors):
+        with open(emb_file, "r", encoding="utf-8") as fh:    # from codecs import open，open用于转码，例如 encoding="utf-8"
+            for line in tqdm(fh, total=num_vectors):    # glove总的词向量数用于显示进度，total表示预期的迭代次数
                 array = line.split()
-                word = "".join(array[0:-vec_size])
+                word = "".join(array[0:-vec_size])     # [0:-300]，因为[-300:]是词向量
                 vector = list(map(float, array[-vec_size:]))
-                if word in counter and counter[word] > limit:
+                if word in counter and counter[word] > limit:    # 保证训练文本在词向量中有对应单词
                     embedding_dict[word] = vector
         print(f"{len(embedding_dict)} / {len(filtered_elements)} tokens have corresponding {data_type} embedding vector")
     else:
@@ -170,14 +170,14 @@ def get_embedding(counter, data_type, limit=-1, emb_file=None, vec_size=None, nu
 
     NULL = "--NULL--"
     OOV = "--OOV--"
-    token2idx_dict = {token: idx for idx, token in enumerate(embedding_dict.keys(), 2)}
+    token2idx_dict = {token: idx for idx, token in enumerate(embedding_dict.keys(), 2)}    # 增加了null和oov
     token2idx_dict[NULL] = 0
     token2idx_dict[OOV] = 1
     embedding_dict[NULL] = [0. for _ in range(vec_size)]
     embedding_dict[OOV] = [0. for _ in range(vec_size)]
     idx2emb_dict = {idx: embedding_dict[token]
                     for token, idx in token2idx_dict.items()}
-    emb_mat = [idx2emb_dict[idx] for idx in range(len(idx2emb_dict))]
+    emb_mat = [idx2emb_dict[idx] for idx in range(len(idx2emb_dict))]    # 增加了null和oov的词向量（初始化为0）
     return emb_mat, token2idx_dict
 
 
@@ -244,8 +244,8 @@ def is_answerable(example):
 
 
 def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_dict, is_test=False):
-    para_limit = args.test_para_limit if is_test else args.para_limit
-    ques_limit = args.test_ques_limit if is_test else args.ques_limit
+    para_limit = args.test_para_limit if is_test else args.para_limit    # Max number of words in a paragraph
+    ques_limit = args.test_ques_limit if is_test else args.ques_limit    # Max number of words to keep from a question
     ans_limit = args.ans_limit
     char_limit = args.char_limit
 
@@ -260,7 +260,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
 
         return drop
 
-    print(f"Converting {data_type} examples to indices...")
+    print(f"Converting {data_type} examples to indices...")     # 将训练样本中的单词转换为word_embedding中对应的index
     total = 0
     total_ = 0
     meta = {}
@@ -274,7 +274,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
     for n, example in tqdm(enumerate(examples)):
         total_ += 1
 
-        if drop_example(example, is_test):
+        if drop_example(example, is_test):    # 跳过大于limit的训练数据
             continue
 
         total += 1
@@ -283,7 +283,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
             for each in (word, word.lower(), word.capitalize(), word.upper()):
                 if each in word2idx_dict:
                     return word2idx_dict[each]
-            return 1
+            return 1    # 1为OOV，out of vocabulary
 
         def _get_char(char):
             if char in char2idx_dict:
@@ -303,7 +303,7 @@ def build_features(args, examples, data_type, out_file, word2idx_dict, char2idx_
             ques_idx[i] = _get_word(token)
         ques_idxs.append(ques_idx)
 
-        for i, token in enumerate(example["context_chars"]):
+        for i, token in enumerate(example["context_chars"]):    # 每个是一个list，一个list是char的合集
             for j, char in enumerate(token):
                 if j == char_limit:
                     break

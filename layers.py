@@ -88,7 +88,7 @@ class RNNEncoder(nn.Module):
         super(RNNEncoder, self).__init__()
         self.drop_prob = drop_prob
         self.rnn = nn.LSTM(input_size, hidden_size, num_layers,
-                           batch_first=True,
+                           batch_first=True,    # batch_first – If True, then the input and output tensors are provided as (batch, seq, feature). Default: False
                            bidirectional=True,
                            dropout=drop_prob if num_layers > 1 else 0.)
 
@@ -97,16 +97,16 @@ class RNNEncoder(nn.Module):
         orig_len = x.size(1)
 
         # Sort by length and pack sequence for RNN
-        lengths, sort_idx = lengths.sort(0, descending=True)
+        lengths, sort_idx = lengths.sort(dim=0, descending=True)    # lengths为各句的长度
         x = x[sort_idx]     # (batch_size, seq_len, input_size)
-        x = pack_padded_sequence(x, lengths, batch_first=True)
+        x = pack_padded_sequence(x, lengths, batch_first=True)    # 对同一个batch中的不同文本使用padding的方式进行文本长度对齐
 
         # Apply RNN
         x, _ = self.rnn(x)  # (batch_size, seq_len, 2 * hidden_size)
 
         # Unpack and reverse sort
         x, _ = pad_packed_sequence(x, batch_first=True, total_length=orig_len)
-        _, unsort_idx = sort_idx.sort(0)
+        _, unsort_idx = sort_idx.sort(0)    # unsort_idx用于返回原先的顺序，此处排序是将idx从小到大排序，自然就是原先的顺序
         x = x[unsort_idx]   # (batch_size, seq_len, 2 * hidden_size)
 
         # Apply dropout (RNN applies dropout after all but the last layer)
@@ -133,7 +133,7 @@ class BiDAFAttention(nn.Module):
     def __init__(self, hidden_size, drop_prob=0.1):
         super(BiDAFAttention, self).__init__()
         self.drop_prob = drop_prob
-        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))    # nn.Parameter: A kind of Tensor that is to be considered a module parameter.
         self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
         self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
         for weight in (self.c_weight, self.q_weight, self.cq_weight):
@@ -173,7 +173,7 @@ class BiDAFAttention(nn.Module):
         c = F.dropout(c, self.drop_prob, self.training)  # (bs, c_len, hid_size)
         q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
 
-        # Shapes: (batch_size, c_len, q_len)
+        # Shapes: (batch_size, c_len, q_len)  将原来的式子分开来乘
         s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
         s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
                                            .expand([-1, c_len, -1])
@@ -198,7 +198,7 @@ class BiDAFOutput(nn.Module):
     """
     def __init__(self, hidden_size, drop_prob):
         super(BiDAFOutput, self).__init__()
-        self.att_linear_1 = nn.Linear(8 * hidden_size, 1)
+        self.att_linear_1 = nn.Linear(8 * hidden_size, 1)    # 两个矩阵分开计算，不连在一起
         self.mod_linear_1 = nn.Linear(2 * hidden_size, 1)
 
         self.rnn = RNNEncoder(input_size=2 * hidden_size,

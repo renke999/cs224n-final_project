@@ -49,7 +49,7 @@ def main(args):
     model = BiDAF(word_vectors=word_vectors,
                   hidden_size=args.hidden_size,
                   drop_prob=args.drop_prob)
-    model = nn.DataParallel(model, args.gpu_ids)
+    model = nn.DataParallel(model, args.gpu_ids)    # 这也是util中存储的模型
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
         model, step = util.load_model(model, args.load_path, args.gpu_ids)
@@ -69,12 +69,12 @@ def main(args):
     # Get optimizer and scheduler
     optimizer = optim.Adadelta(model.parameters(), args.lr,
                                weight_decay=args.l2_wd)
-    scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
+    scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR    Sets the learning rate of each parameter group to the initial lr times a given function. 退火？
 
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
-    train_loader = data.DataLoader(train_dataset,
+    train_loader = data.DataLoader(train_dataset,    # 将数据分为batch_size
                                    batch_size=args.batch_size,
                                    shuffle=True,
                                    num_workers=args.num_workers,
@@ -105,15 +105,15 @@ def main(args):
                 # Forward
                 log_p1, log_p2 = model(cw_idxs, qw_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
-                loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
+                loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)    # 两个向量相乘
                 loss_val = loss.item()
 
                 # Backward
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
                 optimizer.step()
-                scheduler.step(step // batch_size)
-                ema(model, step // batch_size)
+                scheduler.step(step // batch_size)    # 减少学习率
+                ema(model, step // batch_size)    # 指数加权平均
 
                 # Log info
                 step += batch_size
@@ -156,7 +156,7 @@ def main(args):
 
 
 def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
-    nll_meter = util.AverageMeter()
+    nll_meter = util.AverageMeter()    # 评定时采用平均数
 
     model.eval()
     pred_dict = {}
@@ -178,7 +178,7 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
 
             # Get F1 and EM scores
             p1, p2 = log_p1.exp(), log_p2.exp()
-            starts, ends = util.discretize(p1, p2, max_len, use_squad_v2)
+            starts, ends = util.discretize(p1, p2, max_len, use_squad_v2)    # 使start * end概率最大
 
             # Log info
             progress_bar.update(batch_size)

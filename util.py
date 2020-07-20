@@ -56,7 +56,7 @@ class SQuAD(data.Dataset):
             # SQuAD 2.0: Use index 0 for no-answer token (token 1 = OOV)
             batch_size, c_len, w_len = self.context_char_idxs.size()
             ones = torch.ones((batch_size, 1), dtype=torch.int64)
-            self.context_idxs = torch.cat((ones, self.context_idxs), dim=1)
+            self.context_idxs = torch.cat((ones, self.context_idxs), dim=1)    # 在每个段落和问题前加一个oov，用于判断没有答案
             self.question_idxs = torch.cat((ones, self.question_idxs), dim=1)
 
             ones = torch.ones((batch_size, 1, w_len), dtype=torch.int64)
@@ -71,7 +71,7 @@ class SQuAD(data.Dataset):
         self.valid_idxs = [idx for idx in range(len(self.ids))
                            if use_v2 or self.y1s[idx].item() >= 0]
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx):    # an independent example
         idx = self.valid_idxs[idx]
         example = (self.context_idxs[idx],
                    self.context_char_idxs[idx],
@@ -107,7 +107,7 @@ def collate_fn(examples):
     def merge_0d(scalars, dtype=torch.int64):
         return torch.tensor(scalars, dtype=dtype)
 
-    def merge_1d(arrays, dtype=torch.int64, pad_value=0):
+    def merge_1d(arrays, dtype=torch.int64, pad_value=0):    # 将训练数据pad成同样大小（最长的数据）
         lengths = [(a != pad_value).sum() for a in arrays]
         padded = torch.zeros(len(arrays), max(lengths), dtype=dtype)
         for i, seq in enumerate(arrays):
@@ -184,7 +184,7 @@ class EMA:
 
         # Register model parameters
         for name, param in model.named_parameters():
-            if param.requires_grad:
+            if param.requires_grad:    # 保存所有需要梯度下降的变量
                 self.shadow[name] = param.data.clone()
 
     def __call__(self, model, num_updates):
@@ -193,7 +193,7 @@ class EMA:
             if param.requires_grad:
                 assert name in self.shadow
                 new_average = \
-                    (1.0 - decay) * param.data + decay * self.shadow[name]
+                    (1.0 - decay) * param.data + decay * self.shadow[name]    # 计算指数加权平均数
                 self.shadow[name] = new_average.clone()
 
     def assign(self, model):
@@ -205,7 +205,7 @@ class EMA:
         for name, param in model.named_parameters():
             if param.requires_grad:
                 assert name in self.shadow
-                self.original[name] = param.data.clone()
+                self.original[name] = param.data.clone()    # 保存原始值并更新，原始值用于resume
                 param.data = self.shadow[name]
 
     def resume(self, model):
@@ -246,7 +246,7 @@ class CheckpointSaver:
         self.metric_name = metric_name
         self.maximize_metric = maximize_metric
         self.best_val = None
-        self.ckpt_paths = queue.PriorityQueue()
+        self.ckpt_paths = queue.PriorityQueue()    # 用优先队列存储指定数量最好的模型
         self.log = log
         self._print(f"Saver will {'max' if maximize_metric else 'min'}imize {metric_name}...")
 
@@ -279,24 +279,24 @@ class CheckpointSaver:
             step (int): Total number of examples seen during training so far.
             model (torch.nn.DataParallel): Model to save.
             metric_val (float): Determines whether checkpoint is best so far.
-            device (torch.device): Device where model resides.
+            device (torch.device): Device where model resides.                 # A torch.device is an object representing the device on which a torch.Tensor is or will be allocated.
         """
         ckpt_dict = {
             'model_name': model.__class__.__name__,
-            'model_state': model.cpu().state_dict(),
+            'model_state': model.cpu().state_dict(),    # 整个模型的参数
             'step': step
         }
         model.to(device)
 
         checkpoint_path = os.path.join(self.save_dir,
-                                       f'step_{step}.pth.tar')
-        torch.save(ckpt_dict, checkpoint_path)
+                                       f'step_{step}.pth.tar')    # 每一步均保存一个checkpoint，最多保存的数量是 max_checkpoints
+        torch.save(ckpt_dict, checkpoint_path)    # https://pytorch.org/docs/stable/jit.html?highlight=torch%20save#torch.jit.save
         self._print(f'Saved checkpoint: {checkpoint_path}')
 
-        if self.is_best(metric_val):
+        if self.is_best(metric_val):    # 通过比较当前是否是最优模型来寸触摸型
             # Save the best model
             self.best_val = metric_val
-            best_path = os.path.join(self.save_dir, 'best.pth.tar')
+            best_path = os.path.join(self.save_dir, 'best.pth.tar')    # 保存最优模型
             shutil.copy(checkpoint_path, best_path)
             self._print(f'New best checkpoint at step {step}...')
 
@@ -336,7 +336,7 @@ def load_model(model, checkpoint_path, gpu_ids, return_step=True):
     ckpt_dict = torch.load(checkpoint_path, map_location=device)
 
     # Build model, load parameters
-    model.load_state_dict(ckpt_dict['model_state'])
+    model.load_state_dict(ckpt_dict['model_state'])    # 'model_state': model.cpu().state_dict()
 
     if return_step:
         step = ckpt_dict['step']
@@ -379,7 +379,7 @@ def masked_softmax(logits, mask, dim=-1, log_softmax=False):
         probs (torch.Tensor): Result of taking masked softmax over the logits.
     """
     mask = mask.type(torch.float32)
-    masked_logits = mask * logits + (1 - mask) * -1e30
+    masked_logits = mask * logits + (1 - mask) * -1e30    # 妙，近似
     softmax_fn = F.log_softmax if log_softmax else F.softmax
     probs = softmax_fn(masked_logits, dim)
 
@@ -390,7 +390,7 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
     """Visualize text examples to TensorBoard.
 
     Args:
-        tbx (tensorboardX.SummaryWriter): Summary writer.
+        tbx (tensorboardX.SummaryWriter): Summary writer.                           # log events within PyTorch  https://tensorboardx.readthedocs.io/en/latest/tutorial.html
         pred_dict (dict): dict of predictions of the form id -> pred.
         eval_path (str): Path to eval JSON file.
         step (int): Number of examples seen so far during training.
@@ -402,18 +402,18 @@ def visualize(tbx, pred_dict, eval_path, step, split, num_visuals):
     if num_visuals > len(pred_dict):
         num_visuals = len(pred_dict)
 
-    visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)
+    visual_ids = np.random.choice(list(pred_dict), size=num_visuals, replace=False)    # 按均匀分布从list(pred_dict)随机挑选num_visuals个进行数据观察
 
     with open(eval_path, 'r') as eval_file:
         eval_dict = json.load(eval_file)
     for i, id_ in enumerate(visual_ids):
-        pred = pred_dict[id_] or 'N/A'
-        example = eval_dict[str(id_)]
+        pred = pred_dict[id_] or 'N/A'    # 根据每个回答独特的id寻找模型预测的回答内容
+        example = eval_dict[str(id_)]    # 找到原样本准备比对
         question = example['question']
         context = example['context']
         answers = example['answers']
 
-        gold = answers[0] if answers else 'N/A'
+        gold = answers[0] if answers else 'N/A'    # 原样本中的答案
         tbl_fmt = (f'- **Question:** {question}\n'
                    + f'- **Context:** {context}\n'
                    + f'- **Answer:** {gold}\n'
@@ -575,13 +575,13 @@ def discretize(p_start, p_end, max_len=15, no_answer=False):
         raise ValueError('Expected p_start and p_end to have values in [0, 1]')
 
     # Compute pairwise probabilities
-    p_start = p_start.unsqueeze(dim=2)
+    p_start = p_start.unsqueeze(dim=2)    # insert a dim 1: https://pytorch.org/docs/stable/torch.html?highlight=unsqueeze#torch.unsqueeze
     p_end = p_end.unsqueeze(dim=1)
     p_joint = torch.matmul(p_start, p_end)  # (batch_size, c_len, c_len)
 
     # Restrict to pairs (i, j) such that i <= j <= i + max_len - 1
-    c_len, device = p_start.size(1), p_start.device
-    is_legal_pair = torch.triu(torch.ones((c_len, c_len), device=device))
+    c_len, device = p_start.size(1), p_start.device    # https://pytorch.org/docs/stable/tensor_attributes.html#torch.torch.device
+    is_legal_pair = torch.triu(torch.ones((c_len, c_len), device=device))    # upper triangle matrix: https://pytorch.org/docs/stable/torch.html?highlight=triu#torch.triu
     is_legal_pair -= torch.triu(torch.ones((c_len, c_len), device=device),
                                 diagonal=max_len)
     if no_answer:
@@ -591,10 +591,10 @@ def discretize(p_start, p_end, max_len=15, no_answer=False):
         is_legal_pair[:, 0] = 0
     else:
         p_no_answer = None
-    p_joint *= is_legal_pair
+    p_joint *= is_legal_pair    # is_legal_pair相当于mask，合法的对应位置为1
 
-    # Take pair (i, j) that maximizes p_joint
-    max_in_row, _ = torch.max(p_joint, dim=2)
+    # Take pair (i, j) that maximizes p_joint    最大值一定行最大且列最大，且由于同时找并argmax不好找，所以分开在行列寻找
+    max_in_row, _ = torch.max(p_joint, dim=2)    # (batch_size, c_len)
     max_in_col, _ = torch.max(p_joint, dim=1)
     start_idxs = torch.argmax(max_in_row, dim=-1)
     end_idxs = torch.argmax(max_in_col, dim=-1)
@@ -612,7 +612,7 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
     """Convert predictions to tokens from the context.
 
     Args:
-        eval_dict (dict): Dictionary with eval info for the dataset. This is
+        eval_dict (dict): Dictionary with eval info for the dataset. This is        # 包括context, question, spans, answers, uuid
             used to perform the mapping from IDs and indices to actual text.
         qa_id (int): List of QA example IDs.
         y_start_list (list): List of start predictions.
@@ -635,7 +635,7 @@ def convert_tokens(eval_dict, qa_id, y_start_list, y_end_list, no_answer):
         else:
             if no_answer:
                 y_start, y_end = y_start - 1, y_end - 1
-            start_idx = spans[y_start][0]
+            start_idx = spans[y_start][0]    # 每一个span是一个元组，包括一个单词的起始位置与结束位置
             end_idx = spans[y_end][1]
             pred_dict[str(qid)] = context[start_idx: end_idx]
             sub_dict[uuid] = context[start_idx: end_idx]
@@ -705,14 +705,14 @@ def get_tokens(s):
     return normalize_answer(s).split()
 
 
-def compute_em(a_gold, a_pred):
+def compute_em(a_gold, a_pred):    # 完全匹配
     return int(normalize_answer(a_gold) == normalize_answer(a_pred))
 
 
-def compute_f1(a_gold, a_pred):
+def compute_f1(a_gold, a_pred):    # 部分匹配
     gold_toks = get_tokens(a_gold)
     pred_toks = get_tokens(a_pred)
-    common = Counter(gold_toks) & Counter(pred_toks)
+    common = Counter(gold_toks) & Counter(pred_toks)    # 共有的token及数量
     num_same = sum(common.values())
     if len(gold_toks) == 0 or len(pred_toks) == 0:
         # If either is no-answer, then F1 is 1 if they agree, 0 otherwise

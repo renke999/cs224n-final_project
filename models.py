@@ -52,7 +52,7 @@ class BiDAF(nn.Module):
                                       drop_prob=drop_prob)
 
     def forward(self, cw_idxs, qw_idxs):
-        c_mask = torch.zeros_like(cw_idxs) != cw_idxs
+        c_mask = torch.zeros_like(cw_idxs) != cw_idxs    # zeros_like: https://pytorch.org/docs/stable/torch.html?highlight=zeros_like#torch.zeros_like
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
 
